@@ -28,3 +28,6 @@ Total Parts -> sum of parts, this value might be different with the provided par
 Current Possible Dilution -> yeah
 Force Concentrated Materials -> if your stuff is too diluted, this will show how many materials were force concentrated up to the Maximum dilution value
 Net weight -> this should be same with target weight if not you found a bug congratulations you are smarter than chatterino gpt
+
+
+Tesseract isnt uploaded on github cus gpt told me not to
