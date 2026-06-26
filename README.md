@@ -7,9 +7,9 @@ if u still want to use it read below
 - Hope to god regex parses your shitty copypasta
 
 2. If you have Screenshot of formula
-Import or Paste image OCR
-If you think Tesseract (OCR software) likes your image smack Auto OCR
-If you dont think Tesseract likes your image try Run Column OCR
+- Import or Paste image OCR
+- If you think Tesseract (OCR software) likes your image smack Auto OCR
+- If you dont think Tesseract likes your image try Run Column OCR
 - Select Material Column tickbox and drag over Materials
 - do the same for part and amount, dilution column is optional
 - click Run Column OCR and WAIT YOU NEED TO WAIT
