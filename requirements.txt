@@ -1,0 +1,6 @@
+pillow
+pytesseract
+tksheet
+pyinstaller
+opencv-python
+numpy
