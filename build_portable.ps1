@@ -1,198 +1,123 @@
 $ErrorActionPreference = "Stop"
+Set-Location $PSScriptRoot
 
-Write-Host "========================================"
-Write-Host "PerfumeCalculator Portable Build"
-Write-Host "========================================"
-
-$ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-Set-Location $ProjectRoot
-
-$AppName = "PerfumeCalculator"
-$DistRoot = Join-Path $ProjectRoot "dist"
-$BuildRoot = Join-Path $ProjectRoot "build"
-$SpecFile = Join-Path $ProjectRoot "$AppName.spec"
-$PortableDir = Join-Path $DistRoot $AppName
-$ZipPath = Join-Path $ProjectRoot "${AppName}_portable.zip"
+$AppName = "PerfumeStudio"
+$Python = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
+$PortableDir = Join-Path $PSScriptRoot "dist\$AppName"
+$OldUserData = Join-Path $PortableDir "user_data"
+$BackupUserData = Join-Path $PSScriptRoot ".build_user_data_backup"
+$ReleaseDir = Join-Path $PSScriptRoot "release"
+$StageRoot = Join-Path $PSScriptRoot ".portable_zip_stage"
+$StageApp = Join-Path $StageRoot $AppName
+$ZipPath = Join-Path $ReleaseDir "${AppName}_Portable.zip"
 
 Write-Host ""
-Write-Host "Project root:"
-Write-Host $ProjectRoot
-
+Write-Host "=== PerfumeStudio Portable Builder ==="
 Write-Host ""
-Write-Host "Checking files..."
 
-if (!(Test-Path (Join-Path $ProjectRoot "run.py"))) {
-    throw "run.py not found. This script must be next to run.py."
+# Keep the local dist copy's user data safe while rebuilding. The distributable ZIP
+# intentionally receives an EMPTY user_data directory so private inventory/formulas
+# are never accidentally shipped inside a release.
+if (Test-Path $BackupUserData) { Remove-Item $BackupUserData -Recurse -Force }
+if (Test-Path $OldUserData) {
+    Write-Host "Backing up existing dist user_data..."
+    Copy-Item $OldUserData $BackupUserData -Recurse -Force
 }
 
-if (!(Test-Path (Join-Path $ProjectRoot "perfume_tool"))) {
-    throw "perfume_tool folder not found."
+if (!(Test-Path $Python)) {
+    Write-Host "Creating Python virtual environment..."
+    py -3 -m venv .venv
+    if ($LASTEXITCODE -ne 0) { throw "Failed to create Python virtual environment." }
 }
 
-if (!(Test-Path (Join-Path $ProjectRoot "perfume_tool\app.py"))) {
-    throw "perfume_tool\app.py not found."
-}
+Write-Host "Installing/updating build dependencies..."
+& $Python -m pip install --upgrade pip
+if ($LASTEXITCODE -ne 0) { throw "Failed to update pip." }
+& $Python -m pip install -r requirements.txt
+if ($LASTEXITCODE -ne 0) { throw "Failed to install requirements." }
 
-if (!(Test-Path (Join-Path $ProjectRoot "tesseract\tesseract.exe"))) {
-    throw "tesseract\tesseract.exe not found. Copy C:\Program Files\Tesseract-OCR into project as tesseract\ first."
-}
+# Best-effort OCR setup before packaging. If Tesseract can be found/installed here,
+# its Windows files are copied into the portable package below.
+Write-Host "Checking Tesseract OCR..."
+& $Python -c "from perfume_studio.services.legacy_gcms_ocr import configure_tesseract,_try_install_tesseract_windows; print('Tesseract ready' if (configure_tesseract() or _try_install_tesseract_windows()) else 'Tesseract not found; portable build will continue without bundled OCR binary.')"
 
-if (!(Test-Path (Join-Path $ProjectRoot "tesseract\tessdata\eng.traineddata"))) {
-    throw "tesseract\tessdata\eng.traineddata not found."
-}
-
-Write-Host "OK."
-
-Write-Host ""
-Write-Host "Installing / checking requirements..."
-
-python -m pip install --upgrade pip
-if ($LASTEXITCODE -ne 0) {
-    throw "pip upgrade failed."
-}
-
-python -m pip install -r requirements.txt
-if ($LASTEXITCODE -ne 0) {
-    throw "pip install -r requirements.txt failed."
-}
-
-Write-Host ""
-Write-Host "Cleaning old build files..."
-
-if (Test-Path $DistRoot) {
-    Remove-Item $DistRoot -Recurse -Force
-}
-
-if (Test-Path $BuildRoot) {
-    Remove-Item $BuildRoot -Recurse -Force
-}
-
-if (Test-Path $SpecFile) {
-    Remove-Item $SpecFile -Force
-}
-
-if (Test-Path $ZipPath) {
-    Remove-Item $ZipPath -Force
-}
-
-Write-Host ""
-Write-Host "Running PyInstaller..."
+if (Test-Path build) { Remove-Item build -Recurse -Force }
+if (Test-Path dist) { Remove-Item dist -Recurse -Force }
+if (Test-Path "$AppName.spec") { Remove-Item "$AppName.spec" -Force }
 
 $PyInstallerArgs = @(
-    "-m", "PyInstaller",
-    "--noconfirm",
-    "--clean",
-    "--windowed",
+    "--noconfirm", "--clean", "--windowed", "--onedir",
     "--name", $AppName,
-    "--distpath", $DistRoot,
-    "--workpath", $BuildRoot,
-    "--specpath", $ProjectRoot,
-
-    "--add-data", "tesseract;tesseract",
-
-    "--hidden-import", "PIL._tkinter_finder",
-    "--hidden-import", "pytesseract",
-    "--hidden-import", "tksheet",
-    "--hidden-import", "cv2",
-    "--hidden-import", "numpy",
-    "--hidden-import", "xml.etree.ElementTree",
-
-    "--exclude-module", "matplotlib",
-    "--exclude-module", "matplotlib.pyplot",
-    "--exclude-module", "pandas",
-    "--exclude-module", "scipy",
-    "--exclude-module", "sklearn",
-    "--exclude-module", "IPython",
-    "--exclude-module", "jupyter",
-    "--exclude-module", "notebook",
-
-    "run.py"
+    "--collect-all", "PySide6",
+    "--add-data", "data;data"
 )
 
-Write-Host "python $($PyInstallerArgs -join ' ')"
-python @PyInstallerArgs
-
-if ($LASTEXITCODE -ne 0) {
-    throw "PyInstaller failed with exit code $LASTEXITCODE. Look at the error messages above this line."
+if (Test-Path "Tesseract-OCR\tesseract.exe") {
+    $PyInstallerArgs += @("--add-data", "Tesseract-OCR;Tesseract-OCR")
+} elseif (Test-Path "Tesseract\tesseract.exe") {
+    $PyInstallerArgs += @("--add-data", "Tesseract;Tesseract-OCR")
+} elseif (Test-Path "tesseract\tesseract.exe") {
+    $PyInstallerArgs += @("--add-data", "tesseract;Tesseract-OCR")
 }
+$PyInstallerArgs += "app.py"
 
-Write-Host ""
-Write-Host "Listing dist folder..."
-
-if (Test-Path $DistRoot) {
-    Get-ChildItem $DistRoot -Force | Format-Table Name, Mode, Length
-} else {
-    throw "dist folder was not created."
-}
-
-if (!(Test-Path $PortableDir)) {
-    Write-Host ""
-    Write-Host "Expected portable directory was not found:"
-    Write-Host $PortableDir
-
-    Write-Host ""
-    Write-Host "Trying to find generated exe..."
-
-    $FoundExe = Get-ChildItem $DistRoot -Recurse -Filter "$AppName.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-
-    if ($FoundExe -eq $null) {
-        throw "Could not find $AppName.exe anywhere under dist. PyInstaller probably did not build the app."
-    }
-
-    $PortableDir = Split-Path -Parent $FoundExe.FullName
-
-    Write-Host "Found exe at:"
-    Write-Host $FoundExe.FullName
-
-    Write-Host "Using portable directory:"
-    Write-Host $PortableDir
-}
-
-Write-Host ""
-Write-Host "Creating formulas folder next to exe..."
-
-$FormulaDir = Join-Path $PortableDir "formulas"
-if (!(Test-Path $FormulaDir)) {
-    New-Item -ItemType Directory -Path $FormulaDir | Out-Null
-}
-
-Write-Host ""
-Write-Host "Verifying build output..."
+Write-Host "Building Windows portable application..."
+& $Python -m PyInstaller @PyInstallerArgs
+if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed." }
 
 $ExePath = Join-Path $PortableDir "$AppName.exe"
-
 if (!(Test-Path $ExePath)) {
-    throw "Exe not found: $ExePath"
+    throw "Build finished but $AppName.exe was not created: $ExePath"
 }
 
-$TesseractPath1 = Join-Path $PortableDir "_internal\tesseract\tesseract.exe"
-$TesseractPath2 = Join-Path $PortableDir "tesseract\tesseract.exe"
-
-if ((Test-Path $TesseractPath1) -or (Test-Path $TesseractPath2)) {
-    Write-Host "Bundled Tesseract found."
+# If Tesseract is installed on the build PC but was not supplied as a project folder,
+# copy the installed distribution beside the EXE so OCR works on another PC too.
+$TesseractSources = @(
+    (Join-Path $PSScriptRoot "Tesseract-OCR"),
+    (Join-Path $PSScriptRoot "Tesseract"),
+    (Join-Path $PSScriptRoot "tesseract"),
+    (Join-Path $env:ProgramFiles "Tesseract-OCR")
+)
+if (${env:ProgramFiles(x86)}) {
+    $TesseractSources += (Join-Path ${env:ProgramFiles(x86)} "Tesseract-OCR")
+}
+$TesseractSource = $TesseractSources | Where-Object { $_ -and (Test-Path (Join-Path $_ "tesseract.exe")) } | Select-Object -First 1
+if ($TesseractSource) {
+    $TesseractTarget = Join-Path $PortableDir "Tesseract-OCR"
+    if (Test-Path $TesseractTarget) { Remove-Item $TesseractTarget -Recurse -Force }
+    Write-Host "Bundling Tesseract OCR from: $TesseractSource"
+    Copy-Item $TesseractSource $TesseractTarget -Recurse -Force
 } else {
-    throw "Bundled Tesseract not found in portable output."
+    Write-Warning "Tesseract OCR binary was not found. PDF/image OCR in the generated ZIP will require Tesseract on the target PC."
 }
 
-Write-Host ""
-Write-Host "Creating portable zip..."
-
-if (Test-Path $ZipPath) {
-    Remove-Item $ZipPath -Force
+# Restore the user's local dist data after the clean rebuild.
+if (Test-Path $BackupUserData) {
+    Write-Host "Restoring local dist user_data..."
+    Copy-Item $BackupUserData $OldUserData -Recurse -Force
+    Remove-Item $BackupUserData -Recurse -Force
+} elseif (!(Test-Path $OldUserData)) {
+    New-Item -ItemType Directory -Path $OldUserData | Out-Null
 }
 
-Compress-Archive -Path $PortableDir -DestinationPath $ZipPath -Force
+# Build a clean distributable ZIP. Do NOT include the local user's database/formulas.
+if (Test-Path $StageRoot) { Remove-Item $StageRoot -Recurse -Force }
+New-Item -ItemType Directory -Path $StageApp -Force | Out-Null
+Get-ChildItem $PortableDir -Force | Where-Object { $_.Name -ne 'user_data' } | ForEach-Object {
+    Copy-Item $_.FullName $StageApp -Recurse -Force
+}
+New-Item -ItemType Directory -Path (Join-Path $StageApp "user_data") -Force | Out-Null
+
+if (!(Test-Path $ReleaseDir)) { New-Item -ItemType Directory -Path $ReleaseDir | Out-Null }
+if (Test-Path $ZipPath) { Remove-Item $ZipPath -Force }
+Write-Host "Creating portable ZIP..."
+Compress-Archive -Path $StageApp -DestinationPath $ZipPath -CompressionLevel Optimal
+Remove-Item $StageRoot -Recurse -Force
 
 Write-Host ""
 Write-Host "========================================"
-Write-Host "Build complete!"
+Write-Host " BUILD COMPLETE"
 Write-Host "========================================"
-Write-Host "Portable folder:"
-Write-Host $PortableDir
+Write-Host "Executable: $ExePath"
+Write-Host "Portable ZIP: $ZipPath"
 Write-Host ""
-Write-Host "Portable zip:"
-Write-Host $ZipPath
-Write-Host ""
-Write-Host "Run:"
-Write-Host $ExePath
-Write-Host "========================================"

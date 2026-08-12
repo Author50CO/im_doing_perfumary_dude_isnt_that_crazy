@@ -1,0 +1,16 @@
+PerfumeStudio source tree
+
+app.py                         Application entry point
+perfume_studio/                Core package
+  database.py                  SQLite schema/migrations
+  logging_utils.py             Crash/error logging
+  services/                    Formula, import, IFRA and enrichment logic
+  ui/main_window.py            PySide6 interface
+
+data/                          Bundled IFRA/reference data
+requirements.txt               Python dependencies
+run.bat                        Windows portable release builder
+build_portable.ps1             PyInstaller/ZIP build script
+tests/test_core.py             Core regression tests
+README.md                      Usage/development notes
+CHANGELOG.md                   Version history
