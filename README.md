@@ -1,4 +1,4 @@
-# Perfume Studio MVP 0.9.10
+# Perfume Studio MVP 0.9.10 (By Chatternino gipitty)
 
 ## What changed in 0.9.10
 - Formulator `Override %` is directly editable. A manual value is saved per formula row and changes the manufacturing weight without changing active Parts / 1000. Blank keeps automatic behavior.
